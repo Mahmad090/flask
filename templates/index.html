@@ -1,9 +1,171 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Hello World</title>
-  </head>
-  <body>
-    <h1>Hello World!</h1>
-  </body>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chat App</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .app-container {
+            width: 360px;
+            background: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .header {
+            background: #007bff;
+            color: #fff;
+            padding: 15px;
+            text-align: center;
+        }
+        .chat-box {
+            border-top: 1px solid #ddd;
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        .chat-entry {
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 5px;
+            background: #f1f1f1;
+        }
+        .chat-entry.bot {
+            background: #e1f7e7;
+        }
+        .chat-entry.you {
+            background: #f7e1e1;
+            text-align: right;
+        }
+        .chat-entry audio {
+            margin-top: 5px;
+        }
+        .controls {
+            padding: 10px;
+            display: flex;
+            justify-content: space-around;
+        }
+        .controls button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .controls button:hover:not(:disabled) {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>Pharma Demo</h1>
+        </div>
+        <div class="chat-box" id="chat-box"></div>
+        <div class="controls">
+            <button id="record-btn" onclick="startRecording()" disabled>Record</button>
+            <button id="stop-btn" onclick="stopRecording()" disabled>Stop</button>
+            <button id="send-btn" onclick="sendRecording()" disabled>Send</button>
+        </div>
+        <audio id="audio-playback" controls style="display: none;"></audio>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let awaitingResponse = false;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await requestInitialResponse();
+        });
+
+        async function requestInitialResponse() {
+            const response = await fetch('/initial_response');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            displayMessage('Bot', url);
+            document.getElementById('record-btn').disabled = false;
+        }
+
+        function displayMessage(sender, audioUrl) {
+            const chatBox = document.getElementById('chat-box');
+            const chatEntry = document.createElement('div');
+            chatEntry.className = `chat-entry ${sender === 'Bot' ? 'bot' : 'you'}`;
+            chatEntry.innerHTML = `<strong>${sender}:</strong> <audio src="${audioUrl}" controls></audio>`;
+            chatBox.appendChild(chatEntry);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function startRecording() {
+            if (awaitingResponse) {
+                alert('Please wait for the response from the bot.');
+                return;
+            }
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.start();
+                    isRecording = true;
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+                    document.getElementById('stop-btn').disabled = false;
+                    document.getElementById('record-btn').disabled = true;
+                });
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+            mediaRecorder.stop();
+            isRecording = false;
+            document.getElementById('stop-btn').disabled = true;
+            document.getElementById('send-btn').disabled = false;
+        }
+
+        async function sendRecording() {
+            if (awaitingResponse) {
+                alert('Please wait for the response from the bot.');
+                return;
+            }
+            awaitingResponse = true;
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'user_audio.wav');
+
+            const userAudioUrl = URL.createObjectURL(audioBlob);
+            displayMessage('You', userAudioUrl);
+
+            const response = await fetch('/process_audio', {
+                method: 'POST',
+                body: formData
+            });
+            const responseBlob = await response.blob();
+            const responseUrl = URL.createObjectURL(responseBlob);
+            displayMessage('Bot', responseUrl);
+
+            awaitingResponse = false;
+            document.getElementById('record-btn').disabled = false;
+            document.getElementById('send-btn').disabled = true;
+        }
+    </script>
+</body>
 </html>
